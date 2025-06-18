@@ -487,22 +487,34 @@
                 const systemPrompt = `You are an AI drawing assistant. Your goal is to help the user create by providing inspiration and ideas.
                 1. Analyze the user's latest image capture.
                 2. If the user provided a text prompt, incorporate it.
-                3. Based on the image and the conversation history, generate 3 diverse, creative prompts for new inspirational images. They should be different from each other.
+                3. Based on the image, the text prompt, and the conversation history provided, generate 3 diverse, creative prompts for new inspirational images. They should be different from each other.
                 4. Come up with a helpful, concise text suggestion or question to encourage the user.
                 5. Respond ONLY with JSON in this format: {"imagePrompts": ["prompt1", "prompt2", "prompt3"], "suggestion": "Your text suggestion..."}`;
+
+                const recentHistory = conversationHistory
+                    .slice(-6)
+                    .map(m => `${m.role}: ${m.content}`)
+                    .join('\n');
                 
+                let combinedUserText = `Here is my latest work-in-progress.`;
+                if (userPrompt) {
+                    combinedUserText += ` My latest instruction is: "${userPrompt}"`;
+                }
+                if (recentHistory) {
+                    combinedUserText += `\n\nHere is our recent conversation history for context:\n${recentHistory}`;
+                }
+
                 const userContent = [
-                    { type: 'text', text: `Here is my latest work-in-progress. The conversation so far is attached. ${userPrompt ? `My latest instruction is: "${userPrompt}"` : ''}` },
+                    { type: 'text', text: combinedUserText },
                     { type: 'image_url', image_url: { url: imageUrl } },
                 ];
                 
                 const aiPlanResponse = await websim.chat.completions.create({
                     messages: [
                         { role: 'system', content: systemPrompt },
-                        ...conversationHistory.slice(-6).map(m => ({role: m.role, content: m.content})),
                         { role: 'user', content: userContent }
                     ],
-                    response_format: { type: 'json_object' },
+                    json: true,
                 });
                 
                 const plan = JSON.parse(aiPlanResponse.content);
