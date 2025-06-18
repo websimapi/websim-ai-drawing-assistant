@@ -362,20 +362,27 @@
         function renderChatHistory(messages) {
             chatWindow.innerHTML = '';
             // Newest at the bottom
-            messages.forEach(msg => addMessageToChat(msg.role, msg.content));
+            const sorted = [...messages].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            sorted.forEach(msg => addMessageToChat(msg.role, msg.content));
         }
         
         function renderInspirations(records) {
-             const existingContent = inspirationGallery.querySelector('h2, p');
-            inspirationGallery.innerHTML = ''; // Clear previous images
-            if (existingContent) {
-                inspirationGallery.appendChild(existingContent.cloneNode(true));
-                inspirationGallery.appendChild(existingContent.cloneNode(true).nextSibling);
-            }
+            // Grab the static elements to re-add them after clearing.
+            const h2 = inspirationGallery.querySelector('h2');
+            const p = inspirationGallery.querySelector('p');
 
+            inspirationGallery.innerHTML = ''; // Clear previous images
+            
+            if (h2) inspirationGallery.appendChild(h2);
 
             const sortedRecords = records.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            
+            if (sortedRecords.length === 0) {
+                if (p) inspirationGallery.appendChild(p); // Show placeholder if no images
+            }
+
             sortedRecords.slice(0, 12).forEach(record => { // Show latest 12
+                if (!record.imageUrl) return; // Skip records without an image URL
                 const item = document.createElement('div');
                 item.className = 'inspiration-item';
                 const img = document.createElement('img');
@@ -404,7 +411,11 @@
                 startCapture();
             } catch (err) {
                 console.error("Error starting stream:", err);
-                alert("Could not access media device. Please check permissions.");
+                if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                    alert("Permission to use the camera/screen was denied. Please allow access and try again.");
+                } else {
+                    alert("Could not access media device. Please check permissions.");
+                }
             } finally {
                 updateControlStates();
             }
@@ -439,7 +450,7 @@
             }
         }
 
-        async function captureAndProcess() {
+        async function captureAndProcess(userPrompt = null) {
             if (isProcessing || !stream || !stream.active) return;
 
             showThinking(true);
@@ -460,7 +471,7 @@
                 const imageUrl = await websim.upload(blob);
 
                 // 3. Get AI analysis and generate new images and ideas
-                await getAIInsight(imageUrl);
+                await getAIInsight(imageUrl, userPrompt);
 
             } catch (err) {
                 console.error('Error during capture and process:', err);
@@ -488,10 +499,10 @@
                 const aiPlanResponse = await websim.chat.completions.create({
                     messages: [
                         { role: 'system', content: systemPrompt },
-                        ...conversationHistory.slice(-6), // Include recent context
+                        ...conversationHistory.slice(-6).map(m => ({role: m.role, content: m.content})),
                         { role: 'user', content: userContent }
                     ],
-                    json: true,
+                    response_format: { type: 'json_object' },
                 });
                 
                 const plan = JSON.parse(aiPlanResponse.content);
@@ -540,6 +551,8 @@
             if (!userInput || isProcessing) return;
             
             chatInput.value = '';
+            // Optimistically add to UI while waiting for DB
+            addMessageToChat('user', userInput);
             await room.collection(CHAT_COLLECTION).create({ role: 'user', content: userInput });
 
             if (!stream || !stream.active) {
@@ -548,16 +561,27 @@
             }
             
             // Re-run the process with the new user input
-            await captureAndProcess();
+            // Pass user input to capture function
+            captureAndProcess(userInput);
         });
 
         function initialize() {
             updateControlStates();
             room.collection(CHAT_COLLECTION).subscribe(history => {
-                conversationHistory = history;
-                renderChatHistory(history);
+                const currentLocalHistory = conversationHistory.map(h => h.id);
+                const newMessages = history.filter(h => !currentLocalHistory.includes(h.id));
+
+                conversationHistory = [...history].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                
+                if(newMessages.length > 0) {
+                    renderChatHistory(conversationHistory);
+                }
             });
             room.collection(INSPIRATION_COLLECTION).subscribe(renderInspirations);
+            
+            // Initial render
+            renderChatHistory(room.collection(CHAT_COLLECTION).getList());
+            renderInspirations(room.collection(INSPIRATION_COLLECTION).getList());
         }
 
         initialize();
