@@ -484,36 +484,29 @@
         async function getAIInsight(imageUrl, userPrompt = null) {
             showThinking(true);
             try {
-                const systemPrompt = `You are an AI drawing assistant. Your goal is to help the user create by providing inspiration and ideas.
-                1. Analyze the user's latest image capture.
-                2. If the user provided a text prompt, incorporate it.
-                3. Based on the image, the text prompt, and the conversation history provided, generate 3 diverse, creative prompts for new inspirational images. They should be different from each other.
-                4. Come up with a helpful, concise text suggestion or question to encourage the user.
-                5. Respond ONLY with JSON in this format: {"imagePrompts": ["prompt1", "prompt2", "prompt3"], "suggestion": "Your text suggestion..."}`;
+                // Simplified system prompt to avoid token limits
+                const systemPrompt = `You are an AI drawing assistant. Analyze the image and provide creative inspiration. Respond with JSON: {"imagePrompts": ["prompt1", "prompt2", "prompt3"], "suggestion": "helpful text"}`;
 
-                const recentHistory = conversationHistory
-                    .slice(-6)
-                    .map(m => `${m.role}: ${m.content}`)
-                    .join('\n');
-                
-                let combinedUserText = `Here is my latest work-in-progress.`;
+                // Build user message more simply
+                let userText = "Analyze this image of my work-in-progress and provide creative inspiration.";
                 if (userPrompt) {
-                    combinedUserText += ` My latest instruction is: "${userPrompt}"`;
-                }
-                if (recentHistory) {
-                    combinedUserText += `\n\nHere is our recent conversation history for context:\n${recentHistory}`;
+                    userText += ` User request: "${userPrompt}"`;
                 }
 
-                const userContent = [
-                    { type: 'text', text: combinedUserText },
-                    { type: 'image_url', image_url: { url: imageUrl } },
+                // Simplified message format
+                const messages = [
+                    { role: 'system', content: systemPrompt },
+                    { 
+                        role: 'user', 
+                        content: [
+                            { type: 'text', text: userText },
+                            { type: 'image_url', image_url: { url: imageUrl } }
+                        ]
+                    }
                 ];
                 
                 const aiPlanResponse = await websim.chat.completions.create({
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userContent }
-                    ],
+                    messages: messages,
                     json: true,
                 });
                 
@@ -521,24 +514,44 @@
                 
                 // Generate images in parallel
                 const imagePromises = plan.imagePrompts.map(prompt => 
-                    websim.imageGen({ prompt: `${prompt}, digital art, high quality`, aspect_ratio: "1:1" })
+                    websim.imageGen({ 
+                        prompt: `${prompt}, digital art style`, 
+                        aspect_ratio: "1:1" 
+                    }).catch(err => {
+                        console.error('Image generation failed:', err);
+                        return null; // Return null for failed generations
+                    })
                 );
                 const generatedImages = await Promise.all(imagePromises);
 
-                // Save inspirations to the database
-                const inspirationCreatePromises = generatedImages.map(img => 
+                // Filter out failed generations and save inspirations
+                const validImages = generatedImages.filter(img => img && img.url);
+                const inspirationCreatePromises = validImages.map(img => 
                     room.collection(INSPIRATION_COLLECTION).create({ imageUrl: img.url })
+                        .catch(err => console.error('Failed to save inspiration:', err))
                 );
                 await Promise.all(inspirationCreatePromises);
 
                 // Add AI suggestion to chat
                 if (plan.suggestion) {
-                   await room.collection(CHAT_COLLECTION).create({ role: 'assistant', content: plan.suggestion });
+                   await room.collection(CHAT_COLLECTION).create({ 
+                       role: 'assistant', 
+                       content: plan.suggestion 
+                   }).catch(err => console.error('Failed to save chat message:', err));
                 }
 
             } catch (error) {
                  console.error('AI insight error:', error);
-                 addMessageToChat('assistant', 'I encountered an error trying to generate ideas. Please try again.');
+                 // Add fallback message to chat
+                 try {
+                     await room.collection(CHAT_COLLECTION).create({ 
+                         role: 'assistant', 
+                         content: 'I had trouble analyzing that image. Could you try again or describe what you\'re working on?' 
+                     });
+                 } catch (chatError) {
+                     console.error('Failed to save error message:', chatError);
+                     addMessageToChat('assistant', 'I had trouble analyzing that image. Could you try again or describe what you\'re working on?');
+                 }
             } finally {
                 showThinking(false);
             }
