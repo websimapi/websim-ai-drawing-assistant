@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Drawing Assistant</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --light-bg: #f8f9fa;
+            --dark-text: #343a40;
+            --light-text: #f8f9fa;
+            --border-color: #dee2e6;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: var(--dark-text);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        header {
+            width: 100%;
+            padding: 15px 20px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+            z-index: 10;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.5em;
+        }
+
+        #app {
+            display: grid;
+            grid-template-columns: 1fr;
+            grid-template-rows: auto 1fr;
+            width: 100%;
+            height: calc(100vh - 65px); /* Full height minus header */
+            gap: 20px;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        @media (min-width: 900px) {
+            #app {
+                grid-template-columns: 2fr 1fr;
+                grid-template-rows: 1fr;
+            }
+        }
+        
+        #main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        #video-container {
+            flex-grow: 1;
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            min-height: 200px;
+        }
+        
+        #video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+        
+        #video-placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ccc;
+            text-align: center;
+        }
+
+        #controls-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+        }
+        
+        #controls-container button {
+             padding: 10px 15px;
+            font-size: 1em;
+            font-weight: bold;
+            color: #fff;
+            background-color: var(--primary-color);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        #controls-container button#stop-btn {
+            background-color: #dc3545;
+        }
+        #controls-container button#stop-btn:hover {
+            background-color: #c82333;
+        }
+         #controls-container button:hover {
+            background-color: #0069d9;
+        }
+        #controls-container button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        #interval-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #assistant-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+        
+        #inspiration-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+        }
+        
+        #inspiration-gallery h2 {
+            grid-column: 1 / -1;
+            margin: 0 0 5px 0;
+            font-size: 1.2em;
+        }
+        
+        .inspiration-item {
+            width: 100%;
+            padding-bottom: 100%; /* 1:1 Aspect Ratio */
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .inspiration-item img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        #chat-container {
+             display: flex;
+            flex-direction: column;
+            height: 100%;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+        
+        #chat-window {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .chat-message {
+            max-width: 85%;
+            padding: 8px 12px;
+            border-radius: 12px;
+            word-wrap: break-word;
+        }
+        
+        .user-message {
+            background-color: var(--primary-color);
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+        
+        .assistant-message {
+            background-color: #e9ecef;
+            color: var(--dark-text);
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+        
+        #chat-input-form {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        #chat-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+        
+        #chat-input-form button {
+            padding: 10px 15px;
+            font-size: 1em;
+            color: #fff;
+            background-color: var(--primary-color);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: var(--primary-color);
+            animation: spin 1s ease infinite;
+        }
+        
+        #thinking-indicator {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            display: none;
+            z-index: 5;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+    </style>
+</head>
+<body>
+    <header>
+        <h1>AI Drawing Assistant</h1>
+    </header>
+    
+    <div id="app">
+        <main id="main-content">
+            <div id="video-container">
+                <video id="video-feed" playsinline autoplay muted></video>
+                <div id="video-placeholder">
+                    <p>Select a video source below</p>
+                </div>
+                 <div id="thinking-indicator">AI is thinking...</div>
+            </div>
+            <div id="controls-container">
+                <button id="webcam-btn">Start Webcam</button>
+                <button id="screen-btn">Start Screen Share</button>
+                <button id="stop-btn" disabled>Stop</button>
+                <div id="interval-control">
+                    <label for="interval-slider">Capture every:</label>
+                    <input type="range" id="interval-slider" min="10" max="120" value="60">
+                    <span id="interval-value">60s</span>
+                </div>
+            </div>
+        </main>
+        
+        <aside id="assistant-panel">
+            <div id="inspiration-gallery">
+                <h2>Inspiration</h2>
+                 <p style="grid-column: 1 / -1; margin: 0;">The AI will generate inspirational images here based on your work.</p>
+            </div>
+            <div id="chat-container">
+                 <h2>Assistant Chat</h2>
+                <div id="chat-window"></div>
+                <form id="chat-input-form">
+                    <input type="text" id="chat-input" placeholder="Ask for ideas or give directions..." autocomplete="off">
+                    <button type="submit">Send</button>
+                </form>
+            </div>
+        </aside>
+    </div>
+
+    <script type="module">
+        const room = new WebsimSocket();
+
+        // Element Refs
+        const videoFeed = document.getElementById('video-feed');
+        const videoPlaceholder = document.getElementById('video-placeholder');
+        const webcamBtn = document.getElementById('webcam-btn');
+        const screenBtn = document.getElementById('screen-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const intervalSlider = document.getElementById('interval-slider');
+        const intervalValue = document.getElementById('interval-value');
+        const thinkingIndicator = document.getElementById('thinking-indicator');
+        const inspirationGallery = document.getElementById('inspiration-gallery');
+        const chatWindow = document.getElementById('chat-window');
+        const chatInputForm = document.getElementById('chat-input-form');
+        const chatInput = document.getElementById('chat-input');
+
+        // State
+        let stream = null;
+        let captureIntervalId = null;
+        let isProcessing = false;
+        let conversationHistory = [];
+
+        // Constants
+        const CHAT_COLLECTION = 'ai_assistant_chat_v1';
+        const INSPIRATION_COLLECTION = 'ai_assistant_inspiration_v1';
+
+        // --- UI Update Functions ---
+        
+        function updateControlStates() {
+            const isStreaming = !!stream;
+            webcamBtn.disabled = isStreaming;
+            screenBtn.disabled = isStreaming;
+            stopBtn.disabled = !isStreaming;
+            videoPlaceholder.style.display = isStreaming ? 'none' : 'flex';
+            if (isStreaming) {
+                videoFeed.play().catch(e => console.error("Video play failed:", e));
+            }
+        }
+
+        function addMessageToChat(role, text) {
+            const messageEl = document.createElement('div');
+            messageEl.classList.add('chat-message', `${role}-message`);
+            messageEl.textContent = text;
+            chatWindow.appendChild(messageEl);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        function renderChatHistory(messages) {
+            chatWindow.innerHTML = '';
+            // Newest at the bottom
+            messages.forEach(msg => addMessageToChat(msg.role, msg.content));
+        }
+        
+        function renderInspirations(records) {
+             const existingContent = inspirationGallery.querySelector('h2, p');
+            inspirationGallery.innerHTML = ''; // Clear previous images
+            if (existingContent) {
+                inspirationGallery.appendChild(existingContent.cloneNode(true));
+                inspirationGallery.appendChild(existingContent.cloneNode(true).nextSibling);
+            }
+
+
+            const sortedRecords = records.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            sortedRecords.slice(0, 12).forEach(record => { // Show latest 12
+                const item = document.createElement('div');
+                item.className = 'inspiration-item';
+                const img = document.createElement('img');
+                img.src = record.imageUrl;
+                img.alt = 'AI generated inspiration';
+                item.appendChild(img);
+                inspirationGallery.appendChild(item);
+            });
+        }
+        
+        function showThinking(isThinking) {
+            isProcessing = isThinking;
+            thinkingIndicator.style.display = isThinking ? 'block' : 'none';
+        }
+
+        // --- Media Functions ---
+
+        async function startStream(getMedia) {
+            if (stream) stopStream();
+            try {
+                stream = await getMedia({
+                    video: { facingMode: "user" },
+                    audio: false
+                });
+                videoFeed.srcObject = stream;
+                startCapture();
+            } catch (err) {
+                console.error("Error starting stream:", err);
+                alert("Could not access media device. Please check permissions.");
+            } finally {
+                updateControlStates();
+            }
+        }
+        
+        const startWebcam = () => startStream(navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices));
+        const startScreenShare = () => startStream(navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices));
+
+        function stopStream() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            stopCapture();
+            videoFeed.srcObject = null;
+            updateControlStates();
+        }
+        
+        // --- Capture and AI Processing ---
+
+        function startCapture() {
+            stopCapture(); // Ensure no multiple intervals
+            const interval = intervalSlider.value * 1000;
+            captureAndProcess(); // run once immediately
+            captureIntervalId = setInterval(captureAndProcess, interval);
+        }
+
+        function stopCapture() {
+            if (captureIntervalId) {
+                clearInterval(captureIntervalId);
+                captureIntervalId = null;
+            }
+        }
+
+        async function captureAndProcess() {
+            if (isProcessing || !stream || !stream.active) return;
+
+            showThinking(true);
+            
+            try {
+                // 1. Capture image from video
+                const canvas = document.createElement('canvas');
+                const track = stream.getVideoTracks()[0];
+                const settings = track.getSettings();
+                canvas.width = settings.width;
+                canvas.height = settings.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
+                
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+                
+                // 2. Upload image
+                const imageUrl = await websim.upload(blob);
+
+                // 3. Get AI analysis and generate new images and ideas
+                await getAIInsight(imageUrl);
+
+            } catch (err) {
+                console.error('Error during capture and process:', err);
+                addMessageToChat('assistant', 'Sorry, I had trouble processing that image.');
+            } finally {
+                showThinking(false);
+            }
+        }
+
+        async function getAIInsight(imageUrl, userPrompt = null) {
+            showThinking(true);
+            try {
+                const systemPrompt = `You are an AI drawing assistant. Your goal is to help the user create by providing inspiration and ideas.
+                1. Analyze the user's latest image capture.
+                2. If the user provided a text prompt, incorporate it.
+                3. Based on the image and the conversation history, generate 3 diverse, creative prompts for new inspirational images. They should be different from each other.
+                4. Come up with a helpful, concise text suggestion or question to encourage the user.
+                5. Respond ONLY with JSON in this format: {"imagePrompts": ["prompt1", "prompt2", "prompt3"], "suggestion": "Your text suggestion..."}`;
+                
+                const userContent = [
+                    { type: 'text', text: `Here is my latest work-in-progress. The conversation so far is attached. ${userPrompt ? `My latest instruction is: "${userPrompt}"` : ''}` },
+                    { type: 'image_url', image_url: { url: imageUrl } },
+                ];
+                
+                const aiPlanResponse = await websim.chat.completions.create({
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        ...conversationHistory.slice(-6), // Include recent context
+                        { role: 'user', content: userContent }
+                    ],
+                    json: true,
+                });
+                
+                const plan = JSON.parse(aiPlanResponse.content);
+                
+                // Generate images in parallel
+                const imagePromises = plan.imagePrompts.map(prompt => 
+                    websim.imageGen({ prompt: `${prompt}, digital art, high quality`, aspect_ratio: "1:1" })
+                );
+                const generatedImages = await Promise.all(imagePromises);
+
+                // Save inspirations to the database
+                const inspirationCreatePromises = generatedImages.map(img => 
+                    room.collection(INSPIRATION_COLLECTION).create({ imageUrl: img.url })
+                );
+                await Promise.all(inspirationCreatePromises);
+
+                // Add AI suggestion to chat
+                if (plan.suggestion) {
+                   await room.collection(CHAT_COLLECTION).create({ role: 'assistant', content: plan.suggestion });
+                }
+
+            } catch (error) {
+                 console.error('AI insight error:', error);
+                 addMessageToChat('assistant', 'I encountered an error trying to generate ideas. Please try again.');
+            } finally {
+                showThinking(false);
+            }
+        }
+        
+        // --- Event Listeners & Init ---
+
+        webcamBtn.addEventListener('click', startWebcam);
+        screenBtn.addEventListener('click', startScreenShare);
+        stopBtn.addEventListener('click', stopStream);
+
+        intervalSlider.addEventListener('input', () => {
+            intervalValue.textContent = `${intervalSlider.value}s`;
+            if (stream) { // If currently running, restart with new interval
+                startCapture();
+            }
+        });
+
+        chatInputForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const userInput = chatInput.value.trim();
+            if (!userInput || isProcessing) return;
+            
+            chatInput.value = '';
+            await room.collection(CHAT_COLLECTION).create({ role: 'user', content: userInput });
+
+            if (!stream || !stream.active) {
+                addMessageToChat('assistant', "Please start your webcam or screen share so I can see what you're working on!");
+                return;
+            }
+            
+            // Re-run the process with the new user input
+            await captureAndProcess();
+        });
+
+        function initialize() {
+            updateControlStates();
+            room.collection(CHAT_COLLECTION).subscribe(history => {
+                conversationHistory = history;
+                renderChatHistory(history);
+            });
+            room.collection(INSPIRATION_COLLECTION).subscribe(renderInspirations);
+        }
+
+        initialize();
+
+    </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
